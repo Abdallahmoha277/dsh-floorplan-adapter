@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Generated floorplan output (regenerate with the tools)
+floorplan/
+
+# Logs
+*.log
+dsh-run.log
+
+# Environment / secrets
+.env
+.env.*
+
+# OS files
+.DS_Store
