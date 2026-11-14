@@ -88,5 +88,5 @@ MIT
 
 ## Credits
 
-- Built on top of [Floorplan](https://github.com/haydenschmitty/floorplan) by [haydenschmitty (Hayden)](https://github.com/haydenschmitty)..
+- Built on top of [Floorplan](https://github.com/haydenschmitty/floorplan) by [haydenschmitty (Hayden)](https://github.com/haydenschmitty).
 - Powered by [DeepSeek Harness](https://github.com/deepseek-ai/DeepSeek-Harness).
