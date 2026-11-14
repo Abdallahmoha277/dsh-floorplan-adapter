@@ -1,0 +1,1112 @@
+{
+  "$schema": "floorplan/architecture@1",
+  "schema": "floorplan/architecture@1",
+  "summary": "Gobber is a multi-agent AI backend for coding tasks. A FastAPI server sends each question through a LangGraph workflow that classifies it, writes Python with DeepSeek, runs the code in an isolated Docker sandbox, reviews the result, and stores approved solutions in Qdrant so similar tasks can reuse them. PostgreSQL keeps users and chat history, a Streamlit chat app is the interface, and Compose, Prometheus and Alembic cover setup and operations.",
+  "project": {
+    "name": "Gobber",
+    "summary": "A FastAPI backend and Streamlit chat app for a multi-agent coding assistant. LangGraph routes each question, writes and runs Python in a locked-down Docker sandbox, reviews the result, and stores successful solutions in Qdrant; PostgreSQL keeps users and chat history.",
+    "entrypoints": [
+      "app/main.py",
+      "app_ui.py",
+      "sandbox/server.py",
+      "start.sh"
+    ]
+  },
+  "audience": "everyone",
+  "include": [
+    "code",
+    "config",
+    "docs",
+    "other"
+  ],
+  "subsystems": [
+    {
+      "id": "api",
+      "name": "Main Server",
+      "description": "The web server that receives requests, checks them and passes them to the right place.",
+      "modules": [
+        {
+          "id": "app-entry",
+          "name": "Application Entry",
+          "description": "Starts the web server, lets the chat screen connect and publishes performance numbers.",
+          "files": [
+            "app/__init__.py",
+            "app/main.py"
+          ]
+        },
+        {
+          "id": "route-registration",
+          "name": "Route Wiring",
+          "description": "Connects the sign-in, ask, history, memory and health requests under one address.",
+          "files": [
+            "app/api/__init__.py",
+            "app/api/v1/__init__.py",
+            "app/api/v1/endpoints/__init__.py",
+            "app/api/v1/router.py"
+          ]
+        },
+        {
+          "id": "auth-endpoints",
+          "name": "Sign-in Routes",
+          "description": "Registers people and checks their password to issue a sign-in pass.",
+          "files": [
+            "app/api/v1/endpoints/auth.py"
+          ]
+        },
+        {
+          "id": "agent-endpoints",
+          "name": "Ask Route",
+          "description": "Accepts a question, runs the agent graph and returns the route, code and output.",
+          "files": [
+            "app/api/v1/endpoints/agent.py"
+          ]
+        },
+        {
+          "id": "history-endpoints",
+          "name": "History Routes",
+          "description": "Reads and appends the signed-in user's chat messages.",
+          "files": [
+            "app/api/v1/endpoints/history.py"
+          ]
+        },
+        {
+          "id": "memory-endpoints",
+          "name": "Memory Routes",
+          "description": "Creates and lists stored question-and-solution records.",
+          "files": [
+            "app/api/v1/endpoints/memory.py"
+          ]
+        },
+        {
+          "id": "health-endpoints",
+          "name": "Health Routes",
+          "description": "Reports whether the main server is running and whether the database answers.",
+          "files": [
+            "app/api/v1/endpoints/health.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents",
+      "name": "Agent Workflow",
+      "description": "The workflow that decides what happens to a question and the specialist helpers that carry it out.",
+      "modules": [
+        {
+          "id": "workflow-graph",
+          "name": "Workflow Graph",
+          "description": "Defines the shared agent state, graph nodes and the conditional retry loop.",
+          "files": [
+            "app/agents/__init__.py",
+            "app/agents/graph.py"
+          ]
+        },
+        {
+          "id": "router-agent",
+          "name": "Question Sorter",
+          "description": "Classifies a question as general QA, research or code.",
+          "files": [
+            "app/agents/router_agent.py"
+          ]
+        },
+        {
+          "id": "coder-agent",
+          "name": "Code Writer",
+          "description": "Generates raw Python from the task, a remembered solution and review feedback.",
+          "files": [
+            "app/agents/coder_agent.py"
+          ]
+        },
+        {
+          "id": "executor-agent",
+          "name": "Code Runner",
+          "description": "Sends generated code to the sandbox and returns stdout and stderr.",
+          "files": [
+            "app/agents/executor_agent.py"
+          ]
+        },
+        {
+          "id": "critic-agent",
+          "name": "Code Reviewer",
+          "description": "Passes or fails the execution result and supplies feedback for another attempt.",
+          "files": [
+            "app/agents/critic_agent.py"
+          ]
+        },
+        {
+          "id": "responder-agent",
+          "name": "Answer Writer",
+          "description": "Writes a direct answer for non-coding questions.",
+          "files": [
+            "app/agents/responder_agent.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core",
+      "name": "Platform Core",
+      "description": "Shared configuration, database session handling and credential helpers.",
+      "modules": [
+        {
+          "id": "settings",
+          "name": "Settings",
+          "description": "Loads project, database, Redis and DeepSeek settings from the environment.",
+          "files": [
+            "app/core/__init__.py",
+            "app/core/config.py",
+            ".env.example"
+          ]
+        },
+        {
+          "id": "database-session",
+          "name": "Database Session",
+          "description": "Opens and closes connections to the saved records and gives each request its own session.",
+          "files": [
+            "app/core/database.py"
+          ]
+        },
+        {
+          "id": "auth-security",
+          "name": "Access Security",
+          "description": "Hashes passwords, checks them and signs the pass used for later requests.",
+          "files": [
+            "app/core/security.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "name": "Data Layer",
+      "description": "Database records, the shape of each request and response, and the steps that keep tables current.",
+      "modules": [
+        {
+          "id": "orm-models",
+          "name": "Tables",
+          "description": "The records for people, chat messages and saved solutions, and how they map to tables.",
+          "files": [
+            "app/models/__init__.py",
+            "app/models/chat.py",
+            "app/models/memory.py",
+            "app/models/user.py"
+          ]
+        },
+        {
+          "id": "schemas",
+          "name": "Payload Shapes",
+          "description": "Defines what each request and response must contain and checks it.",
+          "files": [
+            "app/schemas/__init__.py",
+            "app/schemas/chat.py",
+            "app/schemas/memory.py",
+            "app/schemas/user.py"
+          ]
+        },
+        {
+          "id": "migrations",
+          "name": "Table Changes",
+          "description": "The setup that creates the tables and keeps their shape current.",
+          "files": [
+            "alembic.ini",
+            "alembic/README",
+            "alembic/env.py",
+            "alembic/script.py.mako",
+            "alembic/versions/dcf6d5c2ab38_init_tables.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "name": "Solution Memory",
+      "description": "Vector search that lets the system reuse code that already passed review.",
+      "modules": [
+        {
+          "id": "vector-store",
+          "name": "Solution Store",
+          "description": "Embeds questions with Hugging Face and searches or upserts solutions in Qdrant.",
+          "files": [
+            "app/services/__init__.py",
+            "app/services/memory_service.py"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sandbox",
+      "name": "Execution Sandbox",
+      "description": "The locked-down service that runs AI-generated Python.",
+      "modules": [
+        {
+          "id": "execution-server",
+          "name": "Execution Server",
+          "description": "Writes code to a temporary file, runs it with a timeout and returns the output.",
+          "files": [
+            "sandbox/server.py"
+          ]
+        },
+        {
+          "id": "sandbox-image",
+          "name": "Sandbox Image",
+          "description": "Builds a non-root Python image that serves the executor on port 7070.",
+          "files": [
+            "sandbox/Dockerfile"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "name": "Chat UI",
+      "description": "The Streamlit chat screen people use to sign in and talk to the agents.",
+      "modules": [
+        {
+          "id": "streamlit-app",
+          "name": "Chat Screen",
+          "description": "Signs in, shows history, sends questions and displays answers or generated code.",
+          "files": [
+            "app_ui.py",
+            ".streamlit/config.toml"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops",
+      "name": "Infrastructure and Ops",
+      "description": "Local setup, containers, monitoring, developer tooling and project documentation.",
+      "modules": [
+        {
+          "id": "containers",
+          "name": "Container Stack",
+          "description": "Runs PostgreSQL, Redis, Qdrant, the sandbox, Prometheus, Grafana and Loki.",
+          "files": [
+            "docker-compose.yml"
+          ]
+        },
+        {
+          "id": "observability",
+          "name": "Monitoring",
+          "description": "Collects request counts and timings from the main server every 15 seconds.",
+          "files": [
+            "prometheus.yml"
+          ]
+        },
+        {
+          "id": "dev-scripts",
+          "name": "Setup Scripts",
+          "description": "Installs dependencies, starts the services, prepares the database and launches the server.",
+          "files": [
+            "setup.sh",
+            "start.sh"
+          ]
+        },
+        {
+          "id": "project-docs",
+          "name": "Project Docs",
+          "description": "Explains the system and keeps generated files out of version control.",
+          "files": [
+            "README.md",
+            ".gitignore"
+          ]
+        },
+        {
+          "id": "tooling",
+          "name": "Developer Tooling",
+          "description": "Pins dependencies and configures formatting, linting and the Python interpreter.",
+          "files": [
+            "requirements.txt",
+            ".pre-commit-config.yaml",
+            ".vscode/settings.json"
+          ]
+        },
+        {
+          "id": "ci-pipeline",
+          "name": "Automatic Checks",
+          "description": "Starts the databases, prepares the tables and runs all automatic checks on every push.",
+          "files": [
+            ".github/workflows/ci.yml"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tests",
+      "name": "Tests",
+      "description": "Automated checks for the main server and the question sorter.",
+      "modules": [
+        {
+          "id": "api-tests",
+          "name": "Server Tests",
+          "description": "Exercises health, registration and login against a test client.",
+          "files": [
+            "tests/conftest.py",
+            "tests/test_api.py"
+          ]
+        },
+        {
+          "id": "router-smoke-test",
+          "name": "Sorting Check",
+          "description": "Prints the route chosen for three sample questions.",
+          "files": [
+            "test_router.py"
+          ]
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "api",
+      "label": "Main Server",
+      "kind": "service",
+      "summary": "The web server that receives requests, checks them and passes them to the right place."
+    },
+    {
+      "id": "agents",
+      "label": "Agent Workflow",
+      "kind": "feature",
+      "summary": "The workflow that decides what happens to a question and the specialist helpers that carry it out."
+    },
+    {
+      "id": "core",
+      "label": "Platform Core",
+      "kind": "library",
+      "summary": "Shared configuration, database session handling and credential helpers."
+    },
+    {
+      "id": "data",
+      "label": "Data Layer",
+      "kind": "data",
+      "summary": "Database records, the shape of each request and response, and the steps that keep tables current."
+    },
+    {
+      "id": "memory",
+      "label": "Solution Memory",
+      "kind": "library",
+      "summary": "Vector search that lets the system reuse code that already passed review."
+    },
+    {
+      "id": "sandbox",
+      "label": "Execution Sandbox",
+      "kind": "service",
+      "summary": "The locked-down service that runs AI-generated Python."
+    },
+    {
+      "id": "ui",
+      "label": "Chat UI",
+      "kind": "ui",
+      "summary": "The Streamlit chat screen people use to sign in and talk to the agents."
+    },
+    {
+      "id": "ops",
+      "label": "Infrastructure and Ops",
+      "kind": "infra",
+      "summary": "Local setup, containers, monitoring, developer tooling and project documentation."
+    },
+    {
+      "id": "tests",
+      "label": "Tests",
+      "kind": "test",
+      "summary": "Automated checks for the main server and the question sorter."
+    },
+    {
+      "id": "api.app-entry",
+      "parent": "api",
+      "label": "Application Entry",
+      "kind": "feature",
+      "summary": "Starts the web server, lets the chat screen connect and publishes performance numbers.",
+      "paths": [
+        "app/__init__.py",
+        "app/main.py"
+      ]
+    },
+    {
+      "id": "api.route-registration",
+      "parent": "api",
+      "label": "Route Wiring",
+      "kind": "feature",
+      "summary": "Connects the sign-in, ask, history, memory and health requests under one address.",
+      "paths": [
+        "app/api/__init__.py",
+        "app/api/v1/__init__.py",
+        "app/api/v1/endpoints/__init__.py",
+        "app/api/v1/router.py"
+      ]
+    },
+    {
+      "id": "api.auth-endpoints",
+      "parent": "api",
+      "label": "Sign-in Routes",
+      "kind": "feature",
+      "summary": "Registers people and checks their password to issue a sign-in pass.",
+      "paths": [
+        "app/api/v1/endpoints/auth.py"
+      ]
+    },
+    {
+      "id": "api.agent-endpoints",
+      "parent": "api",
+      "label": "Ask Route",
+      "kind": "feature",
+      "summary": "Accepts a question, runs the agent graph and returns the route, code and output.",
+      "paths": [
+        "app/api/v1/endpoints/agent.py"
+      ]
+    },
+    {
+      "id": "api.history-endpoints",
+      "parent": "api",
+      "label": "History Routes",
+      "kind": "feature",
+      "summary": "Reads and appends the signed-in user's chat messages.",
+      "paths": [
+        "app/api/v1/endpoints/history.py"
+      ]
+    },
+    {
+      "id": "api.memory-endpoints",
+      "parent": "api",
+      "label": "Memory Routes",
+      "kind": "feature",
+      "summary": "Creates and lists stored question-and-solution records.",
+      "paths": [
+        "app/api/v1/endpoints/memory.py"
+      ]
+    },
+    {
+      "id": "api.health-endpoints",
+      "parent": "api",
+      "label": "Health Routes",
+      "kind": "feature",
+      "summary": "Reports whether the main server is running and whether the database answers.",
+      "paths": [
+        "app/api/v1/endpoints/health.py"
+      ]
+    },
+    {
+      "id": "agents.workflow-graph",
+      "parent": "agents",
+      "label": "Workflow Graph",
+      "kind": "feature",
+      "summary": "Defines the shared agent state, graph nodes and the conditional retry loop.",
+      "paths": [
+        "app/agents/__init__.py",
+        "app/agents/graph.py"
+      ]
+    },
+    {
+      "id": "agents.router-agent",
+      "parent": "agents",
+      "label": "Question Sorter",
+      "kind": "feature",
+      "summary": "Classifies a question as general QA, research or code.",
+      "paths": [
+        "app/agents/router_agent.py"
+      ]
+    },
+    {
+      "id": "agents.coder-agent",
+      "parent": "agents",
+      "label": "Code Writer",
+      "kind": "feature",
+      "summary": "Generates raw Python from the task, a remembered solution and review feedback.",
+      "paths": [
+        "app/agents/coder_agent.py"
+      ]
+    },
+    {
+      "id": "agents.executor-agent",
+      "parent": "agents",
+      "label": "Code Runner",
+      "kind": "feature",
+      "summary": "Sends generated code to the sandbox and returns stdout and stderr.",
+      "paths": [
+        "app/agents/executor_agent.py"
+      ]
+    },
+    {
+      "id": "agents.critic-agent",
+      "parent": "agents",
+      "label": "Code Reviewer",
+      "kind": "feature",
+      "summary": "Passes or fails the execution result and supplies feedback for another attempt.",
+      "paths": [
+        "app/agents/critic_agent.py"
+      ]
+    },
+    {
+      "id": "agents.responder-agent",
+      "parent": "agents",
+      "label": "Answer Writer",
+      "kind": "feature",
+      "summary": "Writes a direct answer for non-coding questions.",
+      "paths": [
+        "app/agents/responder_agent.py"
+      ]
+    },
+    {
+      "id": "core.settings",
+      "parent": "core",
+      "label": "Settings",
+      "kind": "config",
+      "summary": "Loads project, database, Redis and DeepSeek settings from the environment.",
+      "paths": [
+        "app/core/__init__.py",
+        "app/core/config.py",
+        ".env.example"
+      ]
+    },
+    {
+      "id": "core.database-session",
+      "parent": "core",
+      "label": "Database Session",
+      "kind": "data",
+      "summary": "Opens and closes connections to the saved records and gives each request its own session.",
+      "paths": [
+        "app/core/database.py"
+      ]
+    },
+    {
+      "id": "core.auth-security",
+      "parent": "core",
+      "label": "Access Security",
+      "kind": "library",
+      "summary": "Hashes passwords, checks them and signs the pass used for later requests.",
+      "paths": [
+        "app/core/security.py"
+      ]
+    },
+    {
+      "id": "data.orm-models",
+      "parent": "data",
+      "label": "Tables",
+      "kind": "data",
+      "summary": "The records for people, chat messages and saved solutions, and how they map to tables.",
+      "paths": [
+        "app/models/__init__.py",
+        "app/models/chat.py",
+        "app/models/memory.py",
+        "app/models/user.py"
+      ]
+    },
+    {
+      "id": "data.schemas",
+      "parent": "data",
+      "label": "Payload Shapes",
+      "kind": "data",
+      "summary": "Defines what each request and response must contain and checks it.",
+      "paths": [
+        "app/schemas/__init__.py",
+        "app/schemas/chat.py",
+        "app/schemas/memory.py",
+        "app/schemas/user.py"
+      ]
+    },
+    {
+      "id": "data.migrations",
+      "parent": "data",
+      "label": "Table Changes",
+      "kind": "data",
+      "summary": "The setup that creates the tables and keeps their shape current.",
+      "paths": [
+        "alembic.ini",
+        "alembic/README",
+        "alembic/env.py",
+        "alembic/script.py.mako",
+        "alembic/versions/dcf6d5c2ab38_init_tables.py"
+      ]
+    },
+    {
+      "id": "memory.vector-store",
+      "parent": "memory",
+      "label": "Solution Store",
+      "kind": "library",
+      "summary": "Embeds questions with Hugging Face and searches or upserts solutions in Qdrant.",
+      "paths": [
+        "app/services/__init__.py",
+        "app/services/memory_service.py"
+      ]
+    },
+    {
+      "id": "sandbox.execution-server",
+      "parent": "sandbox",
+      "label": "Execution Server",
+      "kind": "feature",
+      "summary": "Writes code to a temporary file, runs it with a timeout and returns the output.",
+      "paths": [
+        "sandbox/server.py"
+      ]
+    },
+    {
+      "id": "sandbox.sandbox-image",
+      "parent": "sandbox",
+      "label": "Sandbox Image",
+      "kind": "infra",
+      "summary": "Builds a non-root Python image that serves the executor on port 7070.",
+      "paths": [
+        "sandbox/Dockerfile"
+      ]
+    },
+    {
+      "id": "ui.streamlit-app",
+      "parent": "ui",
+      "label": "Chat Screen",
+      "kind": "ui",
+      "summary": "Signs in, shows history, sends questions and displays answers or generated code.",
+      "paths": [
+        "app_ui.py",
+        ".streamlit/config.toml"
+      ]
+    },
+    {
+      "id": "ops.containers",
+      "parent": "ops",
+      "label": "Container Stack",
+      "kind": "infra",
+      "summary": "Runs PostgreSQL, Redis, Qdrant, the sandbox, Prometheus, Grafana and Loki.",
+      "paths": [
+        "docker-compose.yml"
+      ]
+    },
+    {
+      "id": "ops.observability",
+      "parent": "ops",
+      "label": "Monitoring",
+      "kind": "infra",
+      "summary": "Collects request counts and timings from the main server every 15 seconds.",
+      "paths": [
+        "prometheus.yml"
+      ]
+    },
+    {
+      "id": "ops.dev-scripts",
+      "parent": "ops",
+      "label": "Setup Scripts",
+      "kind": "script",
+      "summary": "Installs dependencies, starts the services, prepares the database and launches the server.",
+      "paths": [
+        "setup.sh",
+        "start.sh"
+      ]
+    },
+    {
+      "id": "ops.project-docs",
+      "parent": "ops",
+      "label": "Project Docs",
+      "kind": "config",
+      "summary": "Explains the system and keeps generated files out of version control.",
+      "paths": [
+        "README.md",
+        ".gitignore"
+      ]
+    },
+    {
+      "id": "ops.tooling",
+      "parent": "ops",
+      "label": "Developer Tooling",
+      "kind": "config",
+      "summary": "Pins dependencies and configures formatting, linting and the Python interpreter.",
+      "paths": [
+        "requirements.txt",
+        ".pre-commit-config.yaml",
+        ".vscode/settings.json"
+      ]
+    },
+    {
+      "id": "ops.ci-pipeline",
+      "parent": "ops",
+      "label": "Automatic Checks",
+      "kind": "infra",
+      "summary": "Starts the databases, prepares the tables and runs all automatic checks on every push.",
+      "paths": [
+        ".github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "tests.api-tests",
+      "parent": "tests",
+      "label": "Server Tests",
+      "kind": "test",
+      "summary": "Exercises health, registration and login against a test client.",
+      "paths": [
+        "tests/conftest.py",
+        "tests/test_api.py"
+      ]
+    },
+    {
+      "id": "tests.router-smoke-test",
+      "parent": "tests",
+      "label": "Sorting Check",
+      "kind": "test",
+      "summary": "Prints the route chosen for three sample questions.",
+      "paths": [
+        "test_router.py"
+      ]
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek Model",
+      "kind": "external",
+      "summary": "The hosted chat model behind the sorter, coder, reviewer and answer writer.",
+      "packages": [
+        "pypi:langchain_openai"
+      ],
+      "hosts": [
+        "api.deepseek.com"
+      ]
+    },
+    {
+      "id": "qdrant",
+      "label": "Qdrant",
+      "kind": "external",
+      "summary": "Vector database that stores and searches embedded solutions.",
+      "packages": [
+        "pypi:qdrant_client"
+      ]
+    },
+    {
+      "id": "huggingface",
+      "label": "Hugging Face Embeddings",
+      "kind": "external",
+      "summary": "Turns questions into vectors with the all-MiniLM-L6-v2 model.",
+      "packages": [
+        "pypi:langchain_huggingface"
+      ]
+    },
+    {
+      "id": "postgres",
+      "label": "PostgreSQL",
+      "kind": "external",
+      "summary": "Stores users, chat messages and memory records through SQLAlchemy.",
+      "packages": [
+        "pypi:sqlalchemy",
+        "pypi:psycopg"
+      ]
+    },
+    {
+      "id": "prometheus",
+      "label": "Prometheus",
+      "kind": "external",
+      "summary": "Collects request counts and timings from the main server's metrics address.",
+      "packages": [
+        "pypi:prometheus_fastapi_instrumentator"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "ui",
+      "to": "api",
+      "kind": "http",
+      "label": "REST calls",
+      "description": "The chat screen signs in, asks questions and reads or saves history under /api/v1."
+    },
+    {
+      "from": "agents.executor-agent",
+      "to": "sandbox.execution-server",
+      "kind": "http",
+      "label": "POST /execute",
+      "description": "Sends generated Python to the sandbox and receives stdout and stderr."
+    },
+    {
+      "from": "memory",
+      "to": "qdrant",
+      "kind": "data",
+      "label": "search and upsert",
+      "description": "Embeds a question, finds the nearest saved solution and stores newly approved code."
+    },
+    {
+      "from": "memory",
+      "to": "huggingface",
+      "kind": "call",
+      "label": "embed query",
+      "description": "Builds a 384-dimension vector for every question before searching or saving."
+    },
+    {
+      "from": "api",
+      "to": "postgres",
+      "kind": "data",
+      "label": "users, chat, memories",
+      "description": "All persistent records go through SQLAlchemy sessions to PostgreSQL."
+    },
+    {
+      "from": "agents",
+      "to": "deepseek",
+      "kind": "http",
+      "label": "chat completions",
+      "description": "Every model-backed agent calls the DeepSeek chat API with its own prompt."
+    },
+    {
+      "from": "agents.critic-agent",
+      "to": "memory",
+      "kind": "call",
+      "label": "saves approved code",
+      "description": "When the critic passes a solution, the workflow stores it in Qdrant before finishing."
+    },
+    {
+      "from": "ops.dev-scripts",
+      "to": "ops.containers",
+      "kind": "call",
+      "label": "docker compose up",
+      "description": "The startup script brings the service stack up before running the API."
+    },
+    {
+      "from": "prometheus",
+      "to": "api",
+      "kind": "http",
+      "label": "scrapes /metrics",
+      "description": "Prometheus polls the instrumented API every 15 seconds."
+    }
+  ],
+  "annotations": [
+    {
+      "path": "app/core/security.py",
+      "note": "The JWT signing key and token lifetime are hardcoded here; move them into settings before production.",
+      "tags": [
+        "hotspot"
+      ]
+    },
+    {
+      "path": "app/api/v1/endpoints/history.py",
+      "note": "Every valid token is treated as user 1, so all accounts share one chat history.",
+      "tags": [
+        "hotspot"
+      ]
+    },
+    {
+      "path": "app/main.py",
+      "note": "Prometheus instrumentation is registered twice, so the metrics middleware is installed twice.",
+      "tags": [
+        "cleanup"
+      ]
+    },
+    {
+      "path": ".env.example",
+      "note": "The example settings file omits DEEPSEEK_API_KEY even though the app refuses to start without it.",
+      "tags": [
+        "config"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "ask-assistant",
+      "name": "Ask the assistant",
+      "title": "Ask the assistant",
+      "description": "A chat question is classified, answered directly or turned into code that runs and is reviewed.",
+      "steps": [
+        {
+          "node": "ui",
+          "note": "A person types a question in the chat screen."
+        },
+        {
+          "node": "api.agent-endpoints",
+          "note": "POST /api/v1/agent/ask checks the token and starts the workflow with an empty state."
+        },
+        {
+          "node": "agents.workflow-graph",
+          "note": "The router node classifies the request and chooses a branch."
+        },
+        {
+          "node": "agents.router-agent",
+          "note": "DeepSeek labels the question as general QA, research or code."
+        },
+        {
+          "node": "memory",
+          "note": "Code tasks search Qdrant for a similar solution that already passed review."
+        },
+        {
+          "node": "agents.coder-agent",
+          "note": "The coder writes Python using the task, the recalled solution and any feedback."
+        },
+        {
+          "node": "agents.executor-agent",
+          "note": "The runner posts the code to the sandbox."
+        },
+        {
+          "node": "sandbox.execution-server",
+          "note": "The sandbox runs the file under a timeout and returns stdout and stderr."
+        },
+        {
+          "node": "agents.critic-agent",
+          "note": "The critic passes the output or sends feedback back to the coder, up to three tries."
+        },
+        {
+          "node": "memory",
+          "note": "An approved solution is embedded and saved for future tasks."
+        },
+        {
+          "node": "ui",
+          "note": "The screen shows the answer, or the generated code and its output."
+        }
+      ],
+      "stepsText": [
+        "A person types a question in the chat screen.",
+        "POST /api/v1/agent/ask checks the token and starts the workflow with an empty state.",
+        "The router node classifies the request and chooses a branch.",
+        "DeepSeek labels the question as general QA, research or code.",
+        "Code tasks search Qdrant for a similar solution that already passed review.",
+        "The coder writes Python using the task, the recalled solution and any feedback.",
+        "The runner posts the code to the sandbox.",
+        "The sandbox runs the file under a timeout and returns stdout and stderr.",
+        "The critic passes the output or sends feedback back to the coder, up to three tries.",
+        "An approved solution is embedded and saved for future tasks.",
+        "The screen shows the answer, or the generated code and its output."
+      ]
+    },
+    {
+      "id": "sign-in",
+      "name": "Sign in",
+      "title": "Sign in",
+      "description": "A person logs in, gets a token and uses it to load and save chat history.",
+      "steps": [
+        {
+          "node": "ui",
+          "note": "The person enters a username and password in the sidebar."
+        },
+        {
+          "node": "api.auth-endpoints",
+          "note": "Login looks up the user and checks the password hash."
+        },
+        {
+          "node": "core.auth-security",
+          "note": "A signed JWT is issued for later requests."
+        },
+        {
+          "node": "data.orm-models",
+          "note": "The user record comes from the users table."
+        },
+        {
+          "node": "api.history-endpoints",
+          "note": "The token lets the app load and save that person's messages."
+        }
+      ],
+      "stepsText": [
+        "The person enters a username and password in the sidebar.",
+        "Login looks up the user and checks the password hash.",
+        "A signed JWT is issued for later requests.",
+        "The user record comes from the users table.",
+        "The token lets the app load and save that person's messages."
+      ]
+    },
+    {
+      "id": "start-system",
+      "name": "Start the system",
+      "title": "Start the system",
+      "description": "One script brings up the services, prepares the database and starts the API and chat app.",
+      "steps": [
+        {
+          "node": "ops.dev-scripts",
+          "note": "./start.sh creates and activates the virtual environment if needed."
+        },
+        {
+          "node": "ops.containers",
+          "note": "Docker Compose starts PostgreSQL, Redis, Qdrant, the sandbox and the monitoring stack."
+        },
+        {
+          "node": "data.migrations",
+          "note": "Alembic creates or updates the database tables."
+        },
+        {
+          "node": "api",
+          "note": "Uvicorn serves the main API on port 8000."
+        },
+        {
+          "node": "ops.observability",
+          "note": "Prometheus starts scraping the API's metrics."
+        },
+        {
+          "node": "ui",
+          "note": "Streamlit opens the chat screen and calls the API."
+        }
+      ],
+      "stepsText": [
+        "./start.sh creates and activates the virtual environment if needed.",
+        "Docker Compose starts PostgreSQL, Redis, Qdrant, the sandbox and the monitoring stack.",
+        "Alembic creates or updates the database tables.",
+        "Uvicorn serves the main API on port 8000.",
+        "Prometheus starts scraping the API's metrics.",
+        "Streamlit opens the chat screen and calls the API."
+      ]
+    },
+    {
+      "id": "code-retry-loop",
+      "name": "Fix a failed run",
+      "title": "Fix a failed run",
+      "description": "A failed execution loops back to the coder with feedback until it passes or runs out of tries.",
+      "steps": [
+        {
+          "node": "agents.workflow-graph",
+          "note": "The graph sends coding tasks down the code branch."
+        },
+        {
+          "node": "agents.coder-agent",
+          "note": "The coder writes the first version of the program."
+        },
+        {
+          "node": "agents.executor-agent",
+          "note": "The runner sends it to the sandbox."
+        },
+        {
+          "node": "sandbox.execution-server",
+          "note": "The sandbox returns output or an error."
+        },
+        {
+          "node": "agents.critic-agent",
+          "note": "The critic fails the result and writes what went wrong."
+        },
+        {
+          "node": "agents.coder-agent",
+          "note": "The coder receives that feedback and rewrites the code."
+        },
+        {
+          "node": "memory",
+          "note": "After a pass, the working solution is saved to Qdrant."
+        }
+      ],
+      "stepsText": [
+        "The graph sends coding tasks down the code branch.",
+        "The coder writes the first version of the program.",
+        "The runner sends it to the sandbox.",
+        "The sandbox returns output or an error.",
+        "The critic fails the result and writes what went wrong.",
+        "The coder receives that feedback and rewrites the code.",
+        "After a pass, the working solution is saved to Qdrant."
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "node": "ui",
+      "title": "The chat screen",
+      "note": "People sign in here, type a question and see either an answer or generated code and its output."
+    },
+    {
+      "node": "api",
+      "title": "The main server",
+      "note": "Every request from the chat screen lands here and is passed to the right route."
+    },
+    {
+      "node": "agents",
+      "title": "The AI team",
+      "note": "The agents decide what kind of question this is, write code when needed, run it and review the result."
+    },
+    {
+      "node": "sandbox",
+      "title": "The safe runner",
+      "note": "Generated code runs in a separate locked-down container so it cannot touch the main app."
+    },
+    {
+      "node": "memory",
+      "title": "The memory",
+      "note": "Solutions that passed review are stored as vectors so a similar future task can start from them."
+    },
+    {
+      "node": "data",
+      "title": "The saved records",
+      "note": "Users, chat messages and memory records live in PostgreSQL, with Alembic keeping the tables current."
+    }
+  ]
+}
