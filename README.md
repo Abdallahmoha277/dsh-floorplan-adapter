@@ -21,7 +21,9 @@ The plugin registers three tools in `dsh`:
 npm install
 npm run build
 npx @deepseek-ai/dsh plugin --profile headless add "$(pwd)"
-export DEEPSEEK_API_KEY="sk-..."```
+export DEEPSEEK_API_KEY="sk-..."
+```
+ز
 Usage
 We provide a wrapper script that reduces terminal noise, shows a live progress bar, and saves a full log file.
 
