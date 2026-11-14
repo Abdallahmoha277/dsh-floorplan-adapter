@@ -17,3 +17,4 @@ dsh-run.log
 
 # OS files
 .DS_Store
+generated/
